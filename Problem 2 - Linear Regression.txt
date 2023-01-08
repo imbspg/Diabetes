@@ -1,0 +1,91 @@
+1. hadoop fs -mkdir /bigdata
+
+2. hadoop fs -copyFromLocal cancer.csv /bigdata
+
+3. hadoop fs -ls /bigdata/.
+
+4. spark-shell --master yarn
+ 
+
+5.import org.apache.spark.sql.functions._
+import org.apache.spark.ml.feature.{VectorAssembler}
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.ml.regression.{LinearRegression}
+import org.apache.spark.ml.tuning.{CrossValidator, CrossValidatorModel, ParamGridBuilder}
+import org.apache.spark.ml.evaluation.{RegressionEvaluator}
+import org.apache.spark.ml.param.ParamMap
+import org.apache.spark.sql.types.{IntegerType}
+
+
+
+6. 
+
+val cancerdata_saipranank = spark.read
+ .format("csv")
+ .option("header", "true")
+ .load("hdfs://10.128.0.4/bigdata/cancer.csv")
+
+
+
+
+8. 
+val cancer_saipranank = cancerdata_saipranank.select(col("ID").cast(IntegerType),col("ClumpThickness").cast(IntegerType),col("UofCSize").cast(IntegerType),col("UofCShape").cast(IntegerType),col("MarginalAdhesion").cast(IntegerType),col("SECSize").cast(IntegerType),col("BareNuclei").cast(IntegerType),col("BlandChromatin").cast(IntegerType),col("NormalNucleoli").cast(IntegerType),col("Mitoses").cast(IntegerType),col("Class").cast(IntegerType))
+
+
+
+9. 
+val Array(trainingData, testData) = cancer_saipranank.randomSplit(Array(0.8, 0.2), 1111) 
+
+10.
+
+val assembler_saipranank = new VectorAssembler()
+.setInputCols(Array("ID","ClumpThickness","UofCSize","UofCShape","MarginalAdhesion","SECSize","BareNuclei","BlandChromatin","NormalNucleoli","Mitoses"))
+.setOutputCol("assembled-features")
+
+
+11.
+val lr_saipranank = new LinearRegression() 
+ .setFeaturesCol("assembled-features")
+ .setLabelCol("Class")
+
+
+
+12.
+val pipeline_saipranank = new Pipeline()
+ .setStages(Array(assembler_saipranank, lr_saipranank))
+
+
+13.
+val evaluator_saipranank = new RegressionEvaluator()
+ .setLabelCol("Class")
+ .setPredictionCol("prediction")
+ .setMetricName("r2")
+
+14.
+val cross_validator_saipranank = new CrossValidator()
+ .setEstimator(pipeline_saipranank)
+ .setEvaluator(evaluator_saipranank)
+ .setEstimatorParamMaps(new ParamGridBuilder().build)
+ .setNumFolds(3)
+
+15
+
+val Model_saipranank = cross_validator_saipranank.fit(trainingData)
+
+
+16.
+val predictions_saipranank = Model_saipranank.transform(testData)
+
+17.
+
+predictions_saipranank
+ .select(col("id"), col("Class"), col("prediction"))
+ .write
+ .format("csv")
+ .save("hdfs://10.128.0.4/bigdata/cancer2/output/")
+
+18
+val r2 = evaluator_saipranank.evaluate(predictions_saipranank)
+
+println("r-squared on test data = " + r2)
+

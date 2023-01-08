@@ -1,0 +1,111 @@
+1) Loading Cancer.CSV file in GCP
+- wget https://www.dropbox.com/sh/z2jrrs2eq2zmiy6/AABWXOD4DDTXcJuUnlCK35PFa/diabetes.csv?dl=0
+
+2) Making Directory - BigData_Midterm
+-hadoop fs -mkdir /diabetes
+
+3) Copying Cancer.csv to BigData_Midterm
+-hadoop fs -copyFromLocal diabetes.csv /diabetes/.
+
+4) Run Spark
+-spark-shell --master yarn
+
+5) Importing Required Libraries
+
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.expressions.Window
+import org.apache.spark.ml.feature.{VectorAssembler, StringIndexer}
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.ml.classification.{RandomForestClassificationModel, RandomForestClassifier}
+import org.apache.spark.ml.tuning.{CrossValidator, CrossValidatorModel, ParamGridBuilder}
+import org.apache.spark.ml.evaluation.{MulticlassClassificationEvaluator}
+import org.apache.spark.ml.param.ParamMap
+import org.apache.spark.sql.types._
+import org.apache.spark.ml.linalg.Vectors
+import spark.implicits._
+
+6) Creting Schema
+
+val schema_saipranank = StructType(Array(
+	StructField("Pregnancies", IntegerType, true),
+	StructField("Glucose", IntegerType, true),
+	StructField("BloodPressure", IntegerType, true),
+	StructField("SkinThickness", IntegerType, true), 
+        StructField("Insulin", IntegerType, true),
+	StructField("BMI", DoubleType, true),
+	StructField("DiabetesPedigreeFunction", DoubleType, true),
+	StructField("Age", IntegerType, true),
+	StructField("Outcome", IntegerType, true)))
+
+7) Read Dataset
+
+val diabetes_saipranank = spark.read
+ .format("csv")
+ .option("header", "true")
+ .schema(schema_saipranank)
+ .load("hdfs://10.128.0.4/diabetes/diabetes.csv")
+
+8) Indexing Age Column
+
+val indexer_saipranank = new StringIndexer()
+  .setInputCol("Age")
+  .setOutputCol("Age_indexed")
+
+9) Spliting Dataset into training and test data 80:20
+val Array(trainingData, testData) = diabetes_saipranank.randomSplit(Array(0.8, 0.2), 754) 
+
+10) Assemblig all the features
+val assembler_saipranank = new VectorAssembler()
+ .setInputCols(Array("Pregnancies","Glucose","BloodPressure","SkinThickness","Insulin","BMI","DiabetesPedigreeFunction","Age"))
+ .setOutputCol("feature")
+
+11) Creating Randome Forest Object
+val rf_saipranank = new RandomForestClassifier()
+ .setFeaturesCol("feature")
+ .setLabelCol("Outcome")
+ .setSeed(1234)
+
+12) Setting up pipeline
+
+val pipeline_saipranank = new Pipeline()
+  .setStages(Array(indexer_saipranank, assembler_saipranank, rf_saipranank))
+
+13) Evulating the model
+
+val evaluator_saipranank = new MulticlassClassificationEvaluator()
+  .setLabelCol("Outcome")
+  .setPredictionCol("prediction")
+  .setMetricName("accuracy")
+
+14) Hyper Parameters
+
+val paramGrid_saipranank = new ParamGridBuilder()  
+  .addGrid(rf_saipranank.maxDepth, Array(3, 5, 7))
+  .addGrid(rf_saipranank.impurity, Array("entropy","gini")).build()
+
+15) Cross Validate Model
+
+
+val cross_validator_saipranank = new CrossValidator()
+  .setEstimator(pipeline_saipranank)
+  .setEvaluator(evaluator_saipranank)
+  .setEstimatorParamMaps(paramGrid_saipranank)
+  .setNumFolds(3)
+
+16) Train model on training data
+
+val Model_saipranank = cross_validator_saipranank.fit(trainingData)
+
+17) Predicting Test Data
+
+val predictions_saipranank = Model_saipranank.transform(testData)
+
+18) Evulating the model
+
+val accuracy = evaluator_saipranank.evaluate(predictions_saipranank)
+println("accuracy if test data = " + accuracy)
+
+
+
+
+

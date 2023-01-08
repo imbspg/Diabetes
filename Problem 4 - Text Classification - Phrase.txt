@@ -1,0 +1,99 @@
+
+1. hadoop fs -mkdir -p /sai/phrase
+
+2. hadoop fs -copyFromLocal phrase.csv  /sai/phrase/.
+
+3. spark-shell --master yarn
+
+4.
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.expressions.Window
+import org.apache.spark.ml.feature.{RegexTokenizer, StopWordsRemover, CountVectorizer, NGram, IDF, VectorAssembler}
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.ml.classification.{LinearSVC}
+import org.apache.spark.ml.tuning.{CrossValidator, CrossValidatorModel, ParamGridBuilder}
+import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
+import org.apache.spark.ml.param.ParamMap
+
+
+
+5.
+//Load data
+val phrase = spark.read
+ .format("csv")
+ .load("hdfs://10.188.0.2/sai/phrase/phrase.csv")
+ 
+
+
+6. phrase.where(col("_c0")=!="id")
+
+
+7. val phrase_not_05 = res1.filter(col("_c4") =!= 0.5)
+
+8.
+
+val phrase_saipranank = phrase_not_05.select(col("_c4"), col("_c2") ,row_number().over(Window.partitionBy("_c4").orderBy(col("_c4"))).alias("row_num"))
+.withColumn("New_Rating", when($"_c4" === "0.25", 1).otherwise(when($"_c4" === "0.5", 1).otherwise(0)))
+
+9.
+
+//Split words
+val tokenizer = new RegexTokenizer()
+ .setPattern("[a-zA-Z']+")
+ .setGaps(false)
+ .setInputCol("_c2")
+ .setOutputCol("Word")
+
+//Remove common words like is, a etc.
+val remover = new StopWordsRemover()
+ .setInputCol("Word")
+ .setOutputCol("filtered")
+ 
+
+//Bigram - make words pair
+val ngram = new NGram()
+ .setN(2)
+ .setInputCol("filtered")
+ .setOutputCol("ngram-2")
+
+//Index the bigrams
+val cv2: CountVectorizer = new CountVectorizer()
+ .setInputCol("ngram-2")
+ .setOutputCol("ngram-2-features")
+
+//Suppress most common words
+val cv2idf = new IDF()
+ .setInputCol("ngram-2-features")
+ .setOutputCol("cv2-idf-features")
+
+//Train the model with LinearSVC 
+val lsvc = new LinearSVC()
+ .setFeaturesCol("cv2-idf-features")
+ .setLabelCol("New_Rating")
+
+val pipeline = new Pipeline()
+ .setStages(Array(tokenizer, remover, ngram, cv2, cv2idf, lsvc))
+
+val evaluator = new MulticlassClassificationEvaluator()
+ .setLabelCol("New_Rating")
+ .setPredictionCol("prediction")
+ .setMetricName("accuracy")
+
+//Cross validate model
+val cross_validator = new CrossValidator()
+ .setEstimator(pipeline)
+ .setEvaluator(evaluator)
+ .setEstimatorParamMaps(new ParamGridBuilder().build)
+ .setNumFolds(3) 
+ 
+10. val Array(trainingData, testData) = phrase_saipranank.randomSplit(Array(0.8, 0.2), 754) 
+
+
+11. val model = cross_validator.fit(trainingData)
+
+12. val predictions = model.transform(testData)
+
+
+13. val accuracy = evaluator.evaluate(predictions)
+println("accuracy on test data = " + accuracy)
+
